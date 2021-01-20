@@ -11,6 +11,8 @@ import io
 import functools
 import logging
 import time
+import datetime
+from typing import Optional
 
 try:
     import boto3
@@ -1075,6 +1077,8 @@ def iter_bucket(
         key_limit=None,
         workers=16,
         retries=3,
+        last_modified_begin:Optional[datetime.datetime]=None,
+        last_modified_end:Optional[datetime.datetime]=None,
         **session_kwargs):
     """
     Iterate and download all S3 objects under `s3://bucket_name/prefix`.
@@ -1095,6 +1099,10 @@ def iter_bucket(
         The number of subprocesses to use.
     retries: int, optional
         The number of time to retry a failed download.
+    last_modified_begin
+        Filter the s3 files by the Last modified date of the object.
+    last_modified_end: datetime, optional
+        Filter the s3 files by the Last modified date of the object.
     session_kwargs: dict, optional
         Keyword arguments to pass when creating a new session.
         For a list of available names and values, see:
@@ -1144,6 +1152,8 @@ def iter_bucket(
         bucket_name,
         prefix=prefix,
         accept_key=accept_key,
+        last_modified_begin=last_modified_begin,
+        last_modified_end=last_modified_end,
         **session_kwargs)
     download_key = functools.partial(
         _download_key,
@@ -1172,6 +1182,8 @@ def _list_bucket(
         bucket_name,
         prefix='',
         accept_key=lambda k: True,
+        last_modified_begin: Optional[datetime.datetime]=None,
+        last_modified_end: Optional[datetime.datetime]=None,
         **session_kwargs):
     session = boto3.session.Session(**session_kwargs)
     client = session.client('s3')
@@ -1192,8 +1204,16 @@ def _list_bucket(
         else:
             for c in content:
                 key = c['Key']
-                if accept_key(key):
-                    yield key
+                if last_modified_begin is not None:
+                    if c["LastModified"] < last_modified_begin:
+                        continue
+                if last_modified_end is not None:
+                    if c["LastModified"] > last_modified_end:
+                        continue
+                if not accept_key(key):
+                    continue
+                yield key
+                        
         ctoken = response.get('NextContinuationToken', None)
         if not ctoken:
             break
